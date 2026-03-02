@@ -21,7 +21,10 @@ crowd-management/
 │   ├── simulate_data.py    # Sensor data simulation (3 scenarios)
 │   ├── features.py         # Feature engineering pipeline
 │   ├── model.py            # ML model training & evaluation
-│   └── predictor.py        # Real-time prediction logic
+│   ├── predictor.py        # Real-time prediction logic
+│   ├── aws_bedrock.py      # Amazon Bedrock signage & incident briefs
+│   ├── aws_storage.py      # S3 model storage & DynamoDB history
+│   └── lambda_handler.py   # AWS Lambda prediction endpoint
 ├── models/
 │   ├── congestion_model.pkl  # Trained Logistic Regression model
 │   └── scaler.pkl            # Feature scaler
@@ -145,6 +148,51 @@ Congestion occurs when:
 - **Prediction** = "There WILL BE congestion in 12.5 minutes" (actionable)
 
 We achieve prediction by shifting the target label backward in time, so the model learns to recognize **precursor patterns** (gradual density increase + velocity decrease) before the actual congestion threshold is crossed.
+
+---
+
+## ☁️ AWS Architecture
+
+### System Architecture
+```
+┌─────────────────┐    ┌──────────────┐    ┌─────────────────┐    ┌───────────┐
+│  Streamlit App   │───▶│ API Gateway  │───▶│  AWS Lambda     │───▶│ DynamoDB  │
+│  (AWS Amplify)   │    │  (REST API)  │    │  (Prediction)   │    │ (History) │
+└─────────────────┘    └──────────────┘    └────────┬────────┘    └───────────┘
+                                                    │
+                                           ┌────────▼────────┐    ┌───────────┐
+                                           │ Amazon Bedrock   │    │ Amazon S3 │
+                                           │ (Claude 3 Haiku) │    │ (Models)  │
+                                           └─────────────────┘    └───────────┘
+```
+
+### Why AI is Required
+Static rule-based systems can only **detect** congestion after it happens. Our ML model **predicts** congestion 10-15 minutes ahead by learning precursor patterns in density/velocity data. Amazon Bedrock adds a second AI layer — generating context-aware signage messages and incident briefs that adapt to the specific situation rather than using rigid templates.
+
+### AWS Services Used
+
+| Service | Purpose | Implementation |
+|---------|---------|----------------|
+| **Amazon Bedrock** (Claude 3 Haiku) | Generate dynamic digital signage messages & incident summaries | `src/aws_bedrock.py` |
+| **AWS Lambda** | Serverless prediction endpoint — scales to thousands of sensors | `src/lambda_handler.py` |
+| **Amazon API Gateway** | REST API fronting the prediction Lambda | POST `/predict` endpoint |
+| **Amazon S3** | Store trained model artifacts (`.pkl` files) | `src/aws_storage.py` |
+| **Amazon DynamoDB** | Persist historical readings & prediction audit trail | `src/aws_storage.py` |
+| **AWS Amplify** | Host the Streamlit dashboard | Production deployment |
+
+### What Value the AI Layer Adds
+1. **Predictive ML model** — 10-15 min early warning (92% accuracy) vs reactive detection
+2. **Bedrock LLM** — Situation-specific crowd guidance instead of generic "area full" messages
+3. **Bedrock incident briefs** — Instant natural-language summaries for organizers during emergencies
+4. **Graceful fallback** — System works with static templates when Bedrock is unavailable
+
+### AWS Integration Files
+```
+src/
+├── aws_bedrock.py     # Bedrock signage generation & incident briefs
+├── aws_storage.py     # S3 model storage & DynamoDB prediction history
+└── lambda_handler.py  # Serverless prediction endpoint for API Gateway
+```
 
 ---
 

@@ -152,12 +152,27 @@ def evaluate_model(
 
 
 def save_model(model: LogisticRegression, scaler: StandardScaler):
-    """Save trained model and scaler to disk."""
+    """Save trained model and scaler to disk, then upload to S3 if available."""
     os.makedirs(MODEL_DIR, exist_ok=True)
     joblib.dump(model, MODEL_PATH)
     joblib.dump(scaler, SCALER_PATH)
     print(f"\n💾 Model saved to {MODEL_PATH}")
     print(f"💾 Scaler saved to {SCALER_PATH}")
+
+    # Upload to S3 if available
+    try:
+        from src.aws_storage import upload_model_to_s3, is_s3_available
+        if is_s3_available():
+            s3_model = upload_model_to_s3(MODEL_PATH, "congestion_model.pkl")
+            s3_scaler = upload_model_to_s3(SCALER_PATH, "scaler.pkl")
+            if s3_model and s3_scaler:
+                print("☁️  Model artifacts uploaded to Amazon S3")
+            else:
+                print("⚠️  S3 upload partially failed (local copy is fine)")
+        else:
+            print("ℹ️  S3 not available — using local storage only")
+    except ImportError:
+        print("ℹ️  AWS storage module not found — using local storage only")
 
 
 def load_model() -> tuple[LogisticRegression, StandardScaler]:

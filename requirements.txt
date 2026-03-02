@@ -4,3 +4,7 @@ pandas
 numpy
 plotly
 joblib
+
+# AWS Integration
+boto3
+botocore

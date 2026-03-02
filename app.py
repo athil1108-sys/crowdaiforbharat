@@ -29,8 +29,16 @@ from src.predictor import (
     PredictionResult,
     YELLOW_THRESHOLD,
     RED_THRESHOLD,
+    set_use_bedrock,
+    get_use_bedrock,
 )
 from src.model import load_model
+from src.aws_bedrock import (
+    is_bedrock_available,
+    generate_incident_summary,
+    generate_crowd_recommendation,
+)
+from src.aws_storage import get_aws_status, store_incident
 
 
 # ── Page Config ──
@@ -81,6 +89,32 @@ st.markdown("""
         border: 1px solid #333;
         border-radius: 8px;
         padding: 10px;
+    }
+    .aws-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.75em;
+        font-weight: bold;
+        margin: 2px;
+    }
+    .aws-on { background: #0d2818; color: #44BB44; border: 1px solid #44BB44; }
+    .aws-off { background: #2d0a0a; color: #FF4444; border: 1px solid #FF4444; }
+    .incident-brief {
+        padding: 1rem;
+        border-radius: 8px;
+        background: #1a0a2e;
+        border-left: 4px solid #AA44FF;
+        margin: 0.5rem 0;
+    }
+    .bedrock-badge {
+        font-size: 0.7em;
+        padding: 1px 6px;
+        border-radius: 3px;
+        background: #1a2a1a;
+        color: #66CC66;
+        border: 1px solid #44AA44;
+        margin-left: 6px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -238,12 +272,46 @@ def main():
         )
 
         st.markdown("---")
+
+        # ── AWS Integration Panel ──
+        st.markdown("### ☁️ AWS Integration")
+        aws_status = get_aws_status()
+
+        def _badge(label, active):
+            cls = "aws-on" if active else "aws-off"
+            icon = "✅" if active else "❌"
+            return f'<span class="aws-badge {cls}">{icon} {label}</span>'
+
+        st.markdown(
+            _badge("Bedrock", aws_status["bedrock"])
+            + _badge("S3", aws_status["s3"])
+            + _badge("DynamoDB", aws_status["dynamodb"]),
+            unsafe_allow_html=True,
+        )
+
+        # Bedrock toggle
+        bedrock_enabled = st.toggle(
+            "🧠 AI-Powered Signage",
+            value=is_bedrock_available(),
+            help="Use Amazon Bedrock to generate context-aware signage messages. Falls back to templates when off or unavailable.",
+            disabled=not is_bedrock_available(),
+        )
+        set_use_bedrock(bedrock_enabled)
+
+        if is_bedrock_available():
+            st.caption("💡 Bedrock generates dynamic messages")
+        else:
+            st.caption("ℹ️ Using static templates (Bedrock not configured)")
+
+        st.markdown("---")
         st.markdown("### 📊 Model Info")
         st.markdown("""
         - **Algorithm:** Logistic Regression
         - **Features:** 7 engineered features
         - **Prediction:** 10-15 min ahead
         - **Update rate:** Real-time (simulated)
+        - **AI Signage:** Amazon Bedrock
+        - **Infra:** Lambda + API Gateway
         """)
 
         st.markdown("---")
@@ -339,11 +407,61 @@ def main():
 
     # ── Digital Signage ──
     st.markdown("### 📺 Digital Signage Output")
+    if get_use_bedrock():
+        st.caption("🧠 Powered by Amazon Bedrock — AI-generated messages")
     signage_cols = st.columns(3)
     for i, zone in enumerate(zones):
         if zone in predictions:
             with signage_cols[i]:
                 render_signage(predictions[zone])
+
+    # ── AI Incident Brief (Bedrock) ──
+    any_red = any(
+        p.risk_level == "red" for p in predictions.values()
+    )
+    if any_red:
+        st.markdown("### 🚨 AI Incident Brief")
+        # Build zone data dict for Bedrock
+        zone_summary = {}
+        for zone_id, pred in predictions.items():
+            history = zone_histories.get(zone_id)
+            zone_summary[zone_id] = {
+                "risk_probability": pred.risk_probability,
+                "risk_level": pred.risk_level,
+                "density": history.iloc[-1]["density"] if history is not None and len(history) > 0 else 0,
+                "velocity": history.iloc[-1]["velocity"] if history is not None and len(history) > 0 else 0,
+                "time_to_congestion": pred.time_to_congestion,
+            }
+
+        if is_bedrock_available():
+            # Generate incident brief via Bedrock
+            brief_key = f"incident_brief_{step}"
+            if brief_key not in st.session_state:
+                brief = generate_incident_summary(zone_summary)
+                st.session_state[brief_key] = brief or "⚠️ Unable to generate AI brief. Multiple zones at critical risk — deploy crowd control teams."
+                # Store incident to DynamoDB
+                store_incident(
+                    incident_id=f"INC-{step}-{int(time.time())}",
+                    zone_data=zone_summary,
+                    summary=st.session_state[brief_key],
+                    scenario=scenario,
+                )
+            st.markdown(f"""
+            <div class="incident-brief">
+                <small>🧠 Generated by Amazon Bedrock (Claude 3 Haiku)</small><br><br>
+                <strong>{st.session_state[brief_key]}</strong>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            # Fallback static incident brief
+            red_zones = [z for z, p in predictions.items() if p.risk_level == "red"]
+            st.markdown(f"""
+            <div class="incident-brief">
+                <small>⚠️ Static Alert (Bedrock unavailable)</small><br><br>
+                <strong>CRITICAL: {', '.join(red_zones)} at RED risk level. 
+                Deploy crowd control teams immediately. Activate alternate routing.</strong>
+            </div>
+            """, unsafe_allow_html=True)
 
     # ── Auto-advance simulation ──
     if step < n_points - 1:

@@ -14,16 +14,44 @@ Signage trigger logic:
   - prob > 0.85 → Trigger emergency-level message
 """
 
+import logging
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass
+from datetime import datetime
 
 try:
     from src.model import load_model
     from src.features import get_feature_columns, get_realtime_features, PREDICTION_HORIZON
+    from src.aws_bedrock import generate_signage_message as bedrock_signage, is_bedrock_available
+    from src.aws_storage import store_prediction, is_dynamodb_available
 except ImportError:
     from model import load_model
     from features import get_feature_columns, get_realtime_features, PREDICTION_HORIZON
+    try:
+        from aws_bedrock import generate_signage_message as bedrock_signage, is_bedrock_available
+        from aws_storage import store_prediction, is_dynamodb_available
+    except ImportError:
+        bedrock_signage = None
+        is_bedrock_available = lambda: False
+        store_prediction = lambda **kwargs: False
+        is_dynamodb_available = lambda: False
+
+logger = logging.getLogger(__name__)
+
+# ── Bedrock usage flag (can be toggled from dashboard) ──
+_use_bedrock = True
+
+
+def set_use_bedrock(enabled: bool):
+    """Toggle Bedrock-powered signage on/off."""
+    global _use_bedrock
+    _use_bedrock = enabled
+
+
+def get_use_bedrock() -> bool:
+    """Check if Bedrock signage is enabled."""
+    return _use_bedrock and is_bedrock_available()
 
 
 # ── Signage messages per zone ──
@@ -115,21 +143,57 @@ def estimate_time_to_congestion(
     return round(minutes_to_congestion, 1)
 
 
-def get_signage_message(zone_id: str, prob: float) -> tuple[str, bool]:
+def get_signage_message(
+    zone_id: str,
+    prob: float,
+    density: float = 0.0,
+    velocity: float = 0.0,
+    time_to_congestion: float = -1.0,
+) -> tuple[str, bool, bool]:
     """
     Get the appropriate digital signage message for a zone based on risk.
-    Returns (message, is_active).
-    """
-    zone_messages = SIGNAGE_MESSAGES.get(zone_id, SIGNAGE_MESSAGES["Zone_A"])
+    Tries Amazon Bedrock first for AI-generated messages, falls back to static templates.
 
+    Returns (message, is_active, used_bedrock).
+    """
+    # Determine risk level for Bedrock prompt
     if prob >= EMERGENCY_THRESHOLD:
-        return zone_messages["emergency"], True
+        risk_label = "emergency"
     elif prob >= RED_THRESHOLD:
-        return zone_messages["critical"], True
+        risk_label = "critical"
     elif prob >= YELLOW_THRESHOLD:
-        return zone_messages["warning"], True
+        risk_label = "warning"
     else:
-        return "✅ Normal flow. No action required.", False
+        return "✅ Normal flow. No action required.", False, False
+
+    # ── Try Bedrock AI-generated message ──
+    used_bedrock = False
+    if get_use_bedrock() and bedrock_signage is not None:
+        try:
+            ai_message = bedrock_signage(
+                zone_id=zone_id,
+                risk_level=risk_label,
+                risk_probability=prob,
+                density=density,
+                velocity=velocity,
+                time_to_congestion=time_to_congestion,
+            )
+            if ai_message:
+                # Add appropriate emoji prefix
+                if risk_label == "emergency":
+                    prefix = "🆘 "
+                elif risk_label == "critical":
+                    prefix = "🚨 "
+                else:
+                    prefix = "⚠️ "
+                used_bedrock = True
+                return f"{prefix}{ai_message}", True, True
+        except Exception as e:
+            logger.warning(f"Bedrock signage failed, using fallback: {e}")
+
+    # ── Fallback: static template messages ──
+    zone_messages = SIGNAGE_MESSAGES.get(zone_id, SIGNAGE_MESSAGES["Zone_A"])
+    return zone_messages[risk_label], True, False
 
 
 def predict_zone(
@@ -159,9 +223,15 @@ def predict_zone(
         density_rate=features.get("density_rate_of_change", 0),
         current_density=features.get("density", 0),
     )
-    message, signage_active = get_signage_message(zone_id, prob)
+    message, signage_active, used_bedrock = get_signage_message(
+        zone_id=zone_id,
+        prob=prob,
+        density=features.get("density", 0),
+        velocity=features.get("velocity", 0),
+        time_to_congestion=time_to_cong,
+    )
 
-    return PredictionResult(
+    result = PredictionResult(
         zone_id=zone_id,
         risk_probability=round(prob, 4),
         risk_level=risk_level,
@@ -170,6 +240,24 @@ def predict_zone(
         signage_message=message,
         signage_active=signage_active,
     )
+
+    # ── Log prediction to DynamoDB (async-safe, non-blocking) ──
+    if is_dynamodb_available():
+        try:
+            store_prediction(
+                zone_id=zone_id,
+                timestamp=datetime.utcnow().isoformat(),
+                risk_probability=prob,
+                risk_level=risk_level,
+                density=features.get("density", 0),
+                velocity=features.get("velocity", 0),
+                time_to_congestion=time_to_cong,
+                signage_message=message,
+            )
+        except Exception as e:
+            logger.debug(f"DynamoDB logging skipped: {e}")
+
+    return result
 
 
 def predict_all_zones(
