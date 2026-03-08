@@ -1,8 +1,8 @@
 
 import os
 import joblib
-from src.model import load_model, save_model
-from src.aws_storage import upload_model_to_s3, MODEL_PATH, SCALER_PATH
+from src.model import load_model, save_model, MODEL_PATH, SCALER_PATH
+from src.aws_storage import upload_model_to_s3
 
 print("📤 Uploading model artifacts to S3...")
 # Just call the upload part of save_model logic
