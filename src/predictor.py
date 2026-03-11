@@ -97,12 +97,15 @@ def _time_to_congestion(prob: float, level: str) -> int:
     """
     if level == "red":
         # Higher probability = less time remaining
-        base = max(2, int((1.0 - prob) * 20))
+        base = max(1, int((1.0 - prob) * 20))
         return min(base, 8)
     if level == "yellow":
         base = max(9, int((1.0 - prob) * 30))
         return min(base, 15)
-    return 0
+    
+    # Green - no imminent risk, high baseline
+    base = int(60 - prob * 100)
+    return max(15, min(base, 60))
 
 
 # ── Static signage templates ──────────────────────────────────────────────────

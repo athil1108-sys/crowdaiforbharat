@@ -216,6 +216,50 @@ def reset_simulation():
     state.load_scenario(state.scenario_name)
     return {"status": "reset", "step": state.step}
 
+@app.get("/api/overview")
+def get_ai_overview():
+    """Fetches a detailed AI overview from Amazon Bedrock based on current state."""
+    zone_data = {}
+    from src.aws_bedrock import generate_situation_overview
+    
+    for zone in state.zones:
+        hist = state.zone_data[zone].iloc[max(0, state.step - 50):state.step + 1].copy()
+        if len(hist) == 0:
+            continue
+            
+        current_row = hist.iloc[-1]
+        feats = get_realtime_features(hist)
+        
+        if feats:
+            pred = predict_zone(zone, feats, state.model, state.scaler)
+            zone_data[zone] = {
+                "risk_probability": pred.risk_probability,
+                "risk_level": pred.risk_level,
+                "density": float(current_row["density"]),
+                "velocity": float(current_row["velocity"]),
+                "time_to_congestion": pred.time_to_congestion
+            }
+        else:
+            zone_data[zone] = {
+                "risk_probability": 0.0,
+                "risk_level": "green",
+                "density": float(current_row["density"]),
+                "velocity": float(current_row["velocity"]),
+                "time_to_congestion": 0.0
+            }
+            
+    # Try to generate the overview
+    overview = generate_situation_overview(zone_data)
+    if not overview:
+        overview = """⚠️ **AI Overview Unavailable**
+        
+Amazon Bedrock could not be reached. Please ensure:
+1. Your AWS Credentials are valid and loaded.
+2. The IAM Role has `bedrock:InvokeModel`.
+3. Model access for **Claude 3 Haiku** is requested and granted in the `us-east-1` region."""
+        
+    return {"overview": overview}
+
 # ── Serve Static Frontend ──
 # Mount the static directory for CSS/JS
 app.mount("/static", StaticFiles(directory="static"), name="static")

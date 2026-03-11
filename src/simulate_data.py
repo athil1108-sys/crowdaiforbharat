@@ -23,9 +23,14 @@ from datetime import datetime, timedelta
 
 
 def _add_noise(signal: np.ndarray, noise_level: float = 0.1) -> np.ndarray:
-    """Add Gaussian noise to simulate real sensor imperfections."""
+    """Add Gaussian noise and random spikes to simulate real sensor imperfections."""
     noise = np.random.normal(0, noise_level, len(signal))
-    return signal + noise
+    
+    # Add random positive spikes (e.g. sensor ghosting or sudden clustering)
+    spike_mask = np.random.rand(len(signal)) < 0.05  # 5% chance of spike
+    spikes = np.random.exponential(scale=noise_level * 10, size=len(signal)) * spike_mask
+    
+    return signal + noise + spikes
 
 
 def _generate_zone_data(
@@ -142,29 +147,29 @@ def generate_post_event_rush(start_time: datetime = None, interval_seconds: int 
     frames = []
 
     # Zone A — first to congest (closest to venue)
-    d_a, v_a = _build_congestion_event(20, 35, 25, 40, 0.8, 8.5, 1.6, 0.08)
-    padding = np.full(30, 1.0)
+    d_a, v_a = _build_congestion_event(5, 25, 25, 40, 2.5, 8.5, 1.4, 0.08)
+    padding = np.full(25, 1.0)
     d_a = np.concatenate([d_a, padding])
-    v_a = np.concatenate([v_a, np.full(30, 1.5)])
+    v_a = np.concatenate([v_a, np.full(25, 1.5)])
     frames.append(_generate_zone_data("Zone_A", start_time, len(d_a), interval_seconds, d_a, v_a))
 
     n_total = len(d_a)
 
-    # Zone B — cascading congestion (10 min delay)
-    d_b = np.full(n_total, 0.7)
-    v_b = np.full(n_total, 1.7)
-    d_ev, v_ev = _build_congestion_event(0, 30, 20, 35, 0.7, 7.0, 1.7, 0.12)
-    ev_start = 40  # ~20 min delay
+    # Zone B — cascading congestion (starts earlier now)
+    d_b = np.full(n_total, 2.0)
+    v_b = np.full(n_total, 1.5)
+    d_ev, v_ev = _build_congestion_event(0, 25, 20, 35, 2.0, 7.5, 1.5, 0.12)
+    ev_start = 15  # Much shorter delay
     ev_len = min(len(d_ev), n_total - ev_start)
     d_b[ev_start:ev_start + ev_len] = d_ev[:ev_len]
     v_b[ev_start:ev_start + ev_len] = v_ev[:ev_len]
     frames.append(_generate_zone_data("Zone_B", start_time, n_total, interval_seconds, d_b, v_b))
 
     # Zone C — latest cascade
-    d_c = np.full(n_total, 0.5)
-    v_c = np.full(n_total, 1.8)
-    d_ev2, v_ev2 = _build_congestion_event(0, 25, 15, 30, 0.5, 6.5, 1.8, 0.15)
-    ev_start2 = 70
+    d_c = np.full(n_total, 1.5)
+    v_c = np.full(n_total, 1.6)
+    d_ev2, v_ev2 = _build_congestion_event(0, 20, 15, 30, 1.5, 6.0, 1.6, 0.15)
+    ev_start2 = 25  # Shorter delay
     ev_len2 = min(len(d_ev2), n_total - ev_start2)
     d_c[ev_start2:ev_start2 + ev_len2] = d_ev2[:ev_len2]
     v_c[ev_start2:ev_start2 + ev_len2] = v_ev2[:ev_len2]
@@ -185,19 +190,19 @@ def generate_emergency_evacuation(start_time: datetime = None, interval_seconds:
 
     frames = []
 
-    # All zones spike almost simultaneously with very steep ramps
+    # All zones spike almost simultaneously with very steep ramps, already elevated baseline
     for zone_id, (base_d, peak_d, base_v) in [
-        ("Zone_A", (1.0, 9.5, 1.5)),
-        ("Zone_B", (0.8, 9.0, 1.6)),
-        ("Zone_C", (0.6, 8.5, 1.7)),
+        ("Zone_A", (3.5, 9.8, 1.0)),
+        ("Zone_B", (3.0, 9.5, 1.2)),
+        ("Zone_C", (2.5, 9.0, 1.4)),
     ]:
         d_ev, v_ev = _build_congestion_event(
-            n_before=30, n_ramp=15, n_peak=40, n_recovery=35,
+            n_before=2, n_ramp=8, n_peak=40, n_recovery=35,
             base_density=base_d, peak_density=peak_d,
-            base_velocity=base_v, min_velocity=0.05,
+            base_velocity=base_v, min_velocity=0.02,
         )
         frames.append(_generate_zone_data(
-            zone_id, start_time, len(d_ev), interval_seconds, d_ev, v_ev, noise_level=0.2
+            zone_id, start_time, len(d_ev), interval_seconds, d_ev, v_ev, noise_level=0.3
         ))
 
     return pd.concat(frames, ignore_index=True)

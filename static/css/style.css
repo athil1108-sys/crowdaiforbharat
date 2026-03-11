@@ -178,9 +178,9 @@ body {
 
 /* ── Main Content ── */
 .main-content {
-    flex: 1; padding: 24px; overflow-y: auto; background: var(--bg-main);
+    flex: 1; padding: 24px 24px 40px 24px; overflow-y: auto; background: var(--bg-main);
 }
-.view-container { display: none; height: 100%; flex-direction: column; }
+.view-container { display: none; height: 100%; flex-direction: column; padding-bottom: 20px;}
 .view-container.active { display: flex; }
 
 /* Map View */
@@ -248,7 +248,7 @@ body {
 .title-bar { width: 4px; height: 16px; background: var(--cyan); margin-right: 10px; border-radius: 2px; }
 
 .charts-grid-top {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px;
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; width: 100%;
 }
 .charts-grid-bottom {
     display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px;
@@ -256,7 +256,7 @@ body {
 
 .chart-card {
     background: #07101c; border: 1px solid #1a3050; border-radius: 10px;
-    padding: 16px 16px 8px 16px; display: flex; flex-direction: column;
+    padding: 16px 16px 8px 16px; display: flex; flex-direction: column; width: 100%; box-sizing: border-box;
 }
 .chart-card.wide { padding: 16px; }
 .chart-hdr {
@@ -280,3 +280,54 @@ body {
 .dot-live { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); transition: 0.3s; box-shadow: 0 0 8px var(--green); }
 .dot-live.blink { animation: blink 1.8s infinite; }
 .dot-paused { display:inline-block; width:8px; height:8px; border-radius:50%; background:#3d5070; transition: 0.3s; box-shadow: none; }
+
+/* AI Panel (Right Column beside Map) */
+.ai-panel {
+    background: #02060c;
+    border: 1px solid #0f1c2d;
+    border-radius: 6px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    min-width: 300px;
+}
+.ai-panel-hdr {
+    padding: 12px 16px;
+    border-bottom: 1px solid #07101a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 700;
+    color: #22D3EE;
+    font-family: 'JetBrains Mono', monospace;
+    background: #050a11;
+}
+.ai-panel-body {
+    padding: 16px;
+    font-size: 13px;
+    color: #c8d8f0;
+    line-height: 1.6;
+    overflow-y: auto;
+    flex: 1;
+    font-family: 'Inter', sans-serif;
+}
+.btn-icon-small {
+    background: transparent;
+    border: 1px solid #1a3050;
+    color: var(--text-muted);
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 4px 10px;
+    transition: 0.2s;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+}
+.btn-icon-small:hover {
+    background: rgba(34,211,238,0.1);
+    color: var(--cyan);
+    border-color: var(--cyan);
+}
