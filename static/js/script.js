@@ -450,7 +450,7 @@ dom.zoneTabs.forEach(btn => {
 // ── Bedrock AI Integration ──
 async function refreshAI() {
     const aiText = document.getElementById('ai-overview-text');
-    aiText.innerHTML = '<div style="text-align: center; color: #607898; margin-top: 60px;"><div class="dot-live blink" style="margin-bottom: 15px; width:12px; height:12px;"></div><br>Synthesizing real-time overview<br>with <b>Amazon Bedrock</b>...</div>';
+    aiText.innerHTML = '<div style="display: flex; align-items: center; gap: 10px; color: #607898; justify-content: center; padding: 10px 0;"><div class="dot-live blink" style="width:8px; height:8px;"></div> Synthesizing Bedrock situation report...</div>';
     try {
         const res = await fetch("/api/overview");
         const data = await res.json();
