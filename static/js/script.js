@@ -5,6 +5,9 @@ let updateInterval = null;
 let currentView = "map";
 let stepCount = 0;
 let totalSteps = 0;
+let lastRiskState = ""; // Track string of risk levels: e.g. "green-green-yellow"
+let lastAIUpdateTime = 0;
+const AI_COOLDOWN = 30000; // 30 seconds minimum between auto-updates
 
 const ZONE_INFO = {
     "Zone_A": { name: "North Entrance", cap: 200, color: "#22D3EE", id_prefix: "ZA", name_short: "North" },
@@ -216,6 +219,8 @@ async function updateData() {
         } else {
             updateChartsView(data.zones);
         }
+
+        autoRefreshAI(data.zones);
 
     } catch (e) { console.error("Data fetch failed", e); }
 }
@@ -444,7 +449,7 @@ dom.zoneTabs.forEach(btn => {
 });
 
 // ── Bedrock AI Integration ──
-document.getElementById('btn-refresh-ai').onclick = async () => {
+async function refreshAI() {
     const aiText = document.getElementById('ai-overview-text');
     aiText.innerHTML = '<div style="text-align: center; color: #607898; margin-top: 60px;"><div class="dot-live blink" style="margin-bottom: 15px; width:12px; height:12px;"></div><br>Synthesizing real-time overview<br>with <b>Amazon Bedrock</b>...</div>';
     try {
@@ -455,10 +460,27 @@ document.getElementById('btn-refresh-ai').onclick = async () => {
         // Simple bolding for "Zone_A:", etc.
         formatted = formatted.replace(/Zone_[A-C]/g, match => `<strong style="color:var(--cyan)">${match}</strong>`);
         aiText.innerHTML = `<div style="animation: fadeIn 0.5s;">${formatted}</div>`;
+        lastAIUpdateTime = Date.now();
     } catch (e) {
         aiText.innerHTML = '<div style="color:#EF4444; padding: 20px;">⚠️ <b>Connection Error</b><br><br>Failed to reach AI endpoint. Ensure the backend is running and AWS credentials are valid.</div>';
     }
-};
+}
+
+function autoRefreshAI(zones) {
+    // 1. Generate a "snapshot" of the current risk state
+    const currentRisk = Object.keys(ZONE_INFO).map(z => zones[z]?.risk_level || "green").join("-");
+
+    // 2. Detect change (e.g., any zone moved from green to yellow, or yellow to red)
+    const hasChanged = currentRisk !== lastRiskState;
+    const isCooldownOver = (Date.now() - lastAIUpdateTime) > AI_COOLDOWN;
+
+    if (hasChanged && isCooldownOver) {
+        lastRiskState = currentRisk;
+        refreshAI();
+    }
+}
+
+document.getElementById('btn-refresh-ai').onclick = refreshAI;
 
 // Start loop
 initMapOverlay();
