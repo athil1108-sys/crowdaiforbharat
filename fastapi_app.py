@@ -8,14 +8,12 @@ Replaces the Streamlit monolith for better cloud compatibility.
 
 import os
 import time
-from typing import Dict, Any
-import os
-import time
 import math
 import base64
+import asyncio
 from io import BytesIO
-from typing import Dict, Any
-from fastapi import FastAPI, BackgroundTasks
+from typing import Dict, Any, List, Optional
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -33,6 +31,14 @@ from src.features import get_realtime_features, ROLLING_WINDOW
 from src.predictor import predict_zone
 from src.model import load_model
 
+# ── Custom Zone Config (in-memory, cleared on restart) ──
+# Shape: { "map_image": "data:image/...base64...", "zones": [{name,x,y,w,h}, ...] }
+CUSTOM_CONFIG: Optional[Dict] = None
+
+def _normalize_name(name: str) -> str:
+    """Normalize names for robust matching: lowercase, no spaces or underscores."""
+    return "".join(name.split()).replace("_", "").lower()
+
 app = FastAPI(title="CrowdAI Backend")
 
 # ── Globals for Heatmap (Rescaled to 900x520 bounds for better bleed) ──
@@ -44,45 +50,93 @@ _HOTSPOTS = {
     # Zone C (Y: 280-520)
     "Zone_C":[(200,400,65,.8),(450,440,55,.6),(700,380,50,.55)],
 }
+_MAX_DENSITY = 3.0 # Saturation point for heatmap (p/m^2) - Lowered for extreme vibrancy
 
 def _heat_rgba(v):
-    # Smoother ROYGBIV to match reference UI exactly
-    if v < 0.05: return (0,0,0,0)
+    # Neon palette for high-contrast visibility on dark themes
+    if v < 0.01: return (0,0,0,0)
     t = max(0., min(1., v))
     
-    # HSL-like calculation for smoother gradients.
-    # We want: 0.0 -> Blue, 0.4 -> Green, 0.7 -> Yellow, 1.0 -> Red
-    if t < 0.35: # Blue to Cyan to Green
-        s = t / 0.35
-        return (0, int(255*s), int(255*(1-s*0.5)), int(200*s))
-    elif t < 0.7: # Green to Yellow
-        s = (t - 0.35) / 0.35
-        return (int(255*s), 255, 0, min(220, 200 + int(55*s)))
-    else: # Yellow to Red
-        s = (t - 0.7) / 0.3
-        return (255, int(255*(1-s)), 0, 255)
+    # Very high alpha floor for glow effect
+    alpha = int(180 + 75 * t)
+    
+    if t < 0.25: # Neon Cyan-Blue
+        s = t / 0.25
+        return (0, int(200 + 55*s), 255, alpha)
+    elif t < 0.5: # Bright Cyan-Green
+        s = (t - 0.25) / 0.25
+        return (0, 255, int(255*(1-s)), alpha)
+    elif t < 0.75: # Neon Green-Yellow
+        s = (t - 0.5) / 0.25
+        return (int(255*s), 255, 0, alpha)
+    else: # Neon Yellow-Red
+        s = (t - 0.75) / 0.25
+        return (255, int(255*(1-s)), 0, alpha)
 
-def _build_heat_png(zd,VW=900,VH=520,CR=180,RR=104):
-    buf=np.zeros(CR*RR,dtype=np.float32)
-    for zid,spots in _HOTSPOTS.items():
-        d=float(zd.get(zid,1.5)); w=float(np.clip(d/8.,.05,1.3))
-        for cx,cy,sig,base in spots:
-            cx_n=cx/VW*CR; cy_n=cy/VH*RR
-            sig_n=(sig/VW*CR)*(0.8+w*0.7); amp=base*w
-            for r in range(RR):
-                for c in range(CR):
-                    dx,dy=c-cx_n,r-cy_n
-                    buf[r*CR+c]+=amp*math.exp(-(dx*dx+dy*dy)/(2*sig_n*sig_n))
-    mx=buf.max()
-    if mx>0: buf/=mx
-    img=np.zeros((RR,CR,4),dtype=np.uint8)
-    for i in range(RR*CR):
-        ri,ci=divmod(i,CR)
-        rv,gv,bv,av=_heat_rgba(float(buf[i]))
-        img[ri,ci]=[rv,gv,bv,int(av)]
-    pil=PI.fromarray(img,mode="RGBA").filter(ImageFilter.GaussianBlur(radius=6)) # type: ignore
-    bio=BytesIO(); pil.save(bio,format="PNG") # type: ignore
-    return "data:image/png;base64,"+base64.b64encode(bio.getvalue()).decode()
+def _build_heat_png(zd, VW=900, VH=520, CR=180, RR=104):
+    """Default heatmap using predefined hotspots for Zone_A/B/C."""
+    buf = np.zeros(CR * RR, dtype=np.float32)
+    for zid, spots in _HOTSPOTS.items():
+        d = float(zd.get(zid, 1.5))
+        # Non-linear boost: square root ensures low densities still show up significantly
+        w = float(np.clip((d / _MAX_DENSITY)**0.5, 0.1, 1.5))
+        for cx, cy, sig, base in spots:
+            cx_n = cx / VW * CR
+            cy_n = cy / VH * RR
+            # Tighter spots for better definition
+            sig_n = (sig / VW * CR) * (0.7 + w * 0.5)
+            # High amplitude multiplier for better peak visibility
+            amp = base * w * 1.8
+            # Vectorized Gaussian
+            cols = np.arange(CR, dtype=np.float32)
+            rows = np.arange(RR, dtype=np.float32)
+            dc = cols - cx_n
+            dr = rows - cy_n
+            buf += amp * np.exp(-(dc[np.newaxis, :] ** 2 + dr[:, np.newaxis] ** 2) / (2 * sig_n ** 2)).ravel()
+    
+    # Clip to [0, 1] - no relative normalization
+    buf = np.clip(buf, 0.0, 1.0)
+    img = np.zeros((RR, CR, 4), dtype=np.uint8)
+    for i in range(RR * CR):
+        ri, ci = divmod(i, CR)
+        img[ri, ci] = list(_heat_rgba(float(buf[i])))
+    # Reduced blur radius to keep spots distinct
+    pil = PI.fromarray(img, mode="RGBA").filter(ImageFilter.GaussianBlur(radius=3))  # type: ignore
+    bio = BytesIO()
+    pil.save(bio, format="PNG")  # type: ignore
+    return "data:image/png;base64," + base64.b64encode(bio.getvalue()).decode()
+
+
+def _build_custom_heat(custom_zones: List[Dict], zd: Dict[str, float], VW=900, VH=520, CR=180, RR=104):
+    """Heatmap for user-drawn zones: Fills the rectangular area of each zone, scaled by density."""
+    buf = np.zeros((RR, CR), dtype=np.float32)
+    for z in custom_zones:
+        # Scale coordinates from 900x520 to CRxRR
+        x1 = int(max(0, z['x'] / VW * CR))
+        y1 = int(max(0, z['y'] / VH * RR))
+        x2 = int(min(CR, (z['x'] + z['w']) / VW * CR))
+        y2 = int(min(RR, (z['y'] + z['h']) / VH * RR))
+        
+        # Robust lookup: handles Zone A vs Zone_A vs zone a
+        zname_norm = _normalize_name(z['name'])
+        density = float(zd.get(zname_norm, 0.0))
+        val = float(np.clip(density / _MAX_DENSITY, 0.0, 1.2))
+        
+        # Fill the zone area - using max to handle overlapping zones cleanly
+        if x2 > x1 and y2 > y1:
+            buf[y1:y2, x1:x2] = np.maximum(buf[y1:y2, x1:x2], val)
+
+    # Convert to RGBA
+    img = np.zeros((RR, CR, 4), dtype=np.uint8)
+    for r in range(RR):
+        for c in range(CR):
+            img[r, c] = list(_heat_rgba(float(buf[r, c])))
+            
+    # Apply a heavy blur to make the hard rectangles look like a real heatmap
+    pil = PI.fromarray(img, mode="RGBA").filter(ImageFilter.GaussianBlur(radius=12))  # type: ignore
+    bio = BytesIO()
+    pil.save(bio, format="PNG")  # type: ignore
+    return "data:image/png;base64," + base64.b64encode(bio.getvalue()).decode()
 
 # ── Global State (Simulation) ──
 class SimulationState:
@@ -121,6 +175,22 @@ class SimulationState:
             self.step = ROLLING_WINDOW
 
     def get_current_data(self) -> Dict[str, Any]:
+        global CUSTOM_CONFIG
+
+        # ── Determine active zones ──
+        is_custom = False
+        custom_zones: List[Dict] = []
+        if CUSTOM_CONFIG and isinstance(CUSTOM_CONFIG.get('zones'), list):
+            valid = [z for z in CUSTOM_CONFIG['zones']
+                     if z.get('name') and z.get('w', 0) > 5 and z.get('h', 0) > 5]
+            if valid:
+                custom_zones = valid
+                is_custom = True
+
+        # Source zone names for ML data (cycle through Zone_A/B/C)
+        base_zones = self.zones  # ['Zone_A', 'Zone_B', 'Zone_C']
+        active_zones = [z['name'] for z in custom_zones] if is_custom else base_zones
+
         global_status: Dict[str, int] = {"low": 0, "warn": 0, "crit": 0}
         result: Dict[str, Any] = {
             "scenario": self.scenario_name,
@@ -128,32 +198,38 @@ class SimulationState:
             "total_steps": self.n_points,
             "time_label": f"{self.step // 60:02d}:{self.step % 60:02d}",
             "zones": {},
-            "global_status": global_status
+            "global_status": global_status,
+            "is_custom": is_custom,
+            "config": CUSTOM_CONFIG if is_custom else None,
         }
-        
-        # Temp memory for heatmap generating dict (ZoneID -> density)
-        zd_dict = {}
-        
-        for zone in self.zones:
-            hist = self.zone_data[zone].iloc[max(0, self.step - 50):self.step + 1].copy()
+
+        zd_dict: Dict[str, float] = {}
+
+        for i, zone_name in enumerate(active_zones):
+            # Map custom zone to a real simulation zone (cycle)
+            src_zone = base_zones[i % len(base_zones)]
+            hist = self.zone_data[src_zone].iloc[max(0, self.step - 50):self.step + 1].copy()
             if len(hist) == 0:
                 continue
-                
+
             current_row = hist.iloc[-1]
             feats = get_realtime_features(hist)
-            
+
+            density = float(current_row["density"])
+            # Remove jitter to ensure 1:1 match between Dashboard numbers and Heatmap intensity
+
             zone_info: Dict[str, Any] = {
-                "density": float(current_row["density"]),
+                "density": density,
                 "velocity": float(current_row["velocity"]),
                 "history": {
                     "density": hist["density"].tolist()[-20:],
                     "velocity": hist["velocity"].tolist()[-20:],
-                    "labels": [f"{i//60:02d}:{i%60:02d}" for i in range(max(0, self.step-20), self.step)]
+                    "labels": [f"{j//60:02d}:{j%60:02d}" for j in range(max(0, self.step-20), self.step)]
                 }
             }
-            
+
             if feats:
-                pred = predict_zone(zone, feats, self.model, self.scaler)
+                pred = predict_zone(src_zone, feats, self.model, self.scaler)
                 zone_info["risk_level"] = pred.risk_level
                 zone_info["risk_probability"] = pred.risk_probability * 100
                 zone_info["time_to_congestion"] = pred.time_to_congestion
@@ -163,20 +239,23 @@ class SimulationState:
                 zone_info["risk_probability"] = 0.0
                 zone_info["time_to_congestion"] = 0.0
                 zone_info["message"] = "Data collecting..."
-                
-            # Update global counts
+
             if zone_info["risk_level"] == "red":
                 global_status["crit"] += 1
             elif zone_info["risk_level"] == "yellow":
                 global_status["warn"] += 1
             else:
                 global_status["low"] += 1
-                
-            zd_dict[zone] = zone_info["density"]
-            result["zones"][zone] = zone_info
-            
-        result["heatmap_base64"] = _build_heat_png(zd_dict)
-            
+
+            zd_dict[_normalize_name(zone_name)] = zone_info["density"]
+            result["zones"][zone_name] = zone_info
+
+        # Generate heatmap
+        if is_custom:
+            result["heatmap_base64"] = _build_custom_heat(custom_zones, zd_dict)
+        else:
+            result["heatmap_base64"] = _build_heat_png(zd_dict)
+
         return result
 
 # Initialize state
@@ -186,6 +265,10 @@ state = SimulationState()
 
 class ScenarioRequest(BaseModel):
     scenario: str
+
+class ZoneConfigRequest(BaseModel):
+    map_image: Optional[str] = None
+    zones: List[Dict]
 
 @app.get("/api/health")
 def health_check():
@@ -201,6 +284,25 @@ def advance_simulation():
     """Advances the simulation by 1 step (called by frontend interval)."""
     state.tick()
     return {"status": "advanced", "step": state.step}
+
+@app.post("/api/config/zones")
+def save_zone_config(req: ZoneConfigRequest):
+    """Store a custom map image and zone definitions."""
+    global CUSTOM_CONFIG
+    valid = [z for z in req.zones if z.get('name') and z.get('w', 0) > 5 and z.get('h', 0) > 5]
+    if not valid:
+        return {"status": "error", "message": "No valid zones provided"}
+    CUSTOM_CONFIG = {"map_image": req.map_image, "zones": valid}
+    print(f"[Config] Custom layout saved: {len(valid)} zone(s)")
+    return {"status": "success", "zones_saved": len(valid)}
+
+@app.post("/api/config/reset")
+def reset_zone_config():
+    """Clear custom configuration, revert to default zones."""
+    global CUSTOM_CONFIG
+    CUSTOM_CONFIG = None
+    print("[Config] Custom layout cleared.")
+    return {"status": "cleared"}
 
 @app.post("/api/scenario")
 def set_scenario(req: ScenarioRequest):

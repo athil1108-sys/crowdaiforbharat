@@ -10,7 +10,106 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;800&display=swap"
         rel="stylesheet">
     <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
+    <style>
+        /* Setup Page Polished Styles */
+        #view-setup { 
+            font-family: 'Inter', sans-serif !important; 
+        }
+
+        /* Technical Headers (JetBrains Mono) */
+        .setup-step-hdr, 
+        .step-number, 
+        .zone-item, 
+        .chart-lbl, 
+        .chart-val, 
+        .nav-stat,
+        #zone-list-container div:first-child { 
+            font-family: 'JetBrains Mono', monospace !important; 
+            letter-spacing: 0.5px !important;
+        }
+
+        .setup-step-card {
+            background: #07101c !important;
+            border: 1px solid #1a3050 !important;
+            border-radius: 12px !important;
+            padding: 24px !important;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5) !important;
+        }
+
+        .setup-step-hdr {
+            color: #fff !important;
+            font-size: 11px !important;
+            text-transform: uppercase !important;
+            font-weight: 700 !important;
+        }
+
+        .step-number {
+            background: #22D3EE !important;
+            color: #000 !important;
+            font-weight: 800 !important;
+            font-size: 10px !important;
+        }
+
+        .btn-setup-primary {
+            background: #22C55E !important;
+            color: #000 !important;
+            border: none !important;
+            border-radius: 8px !important;
+            font-weight: 800 !important;
+            padding: 14px !important;
+            font-family: 'Inter', sans-serif !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+            cursor: pointer !important;
+            transition: all 0.2s ease !important;
+        }
+        
+        .btn-setup-secondary {
+            background: #0b1828 !important;
+            border: 1px solid #1e3a5f !important;
+            color: #fff !important;
+            border-radius: 8px !important;
+            padding: 12px !important;
+            font-family: 'Inter', sans-serif !important;
+            cursor: pointer !important;
+            font-weight: 600 !important;
+        }
+
+        .upload-zone {
+            border: 1px solid transparent !important; /* No persistent ring */
+            background: rgba(7, 16, 28, 0.6) !important;
+            color: #22D3EE !important;
+            border-radius: 10px !important;
+            outline: none !important;
+            transition: all 0.3s ease !important;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.5) !important;
+        }
+        
+        .upload-zone:hover {
+            background: rgba(34, 211, 238, 0.08) !important;
+            border-color: #22D3EE !important;
+            box-shadow: 0 0 15px rgba(34, 211, 238, 0.2), inset 0 0 5px rgba(34, 211, 238, 0.1) !important;
+        }
+
+        #input-map-upload {
+            outline: none !important;
+        }
+
+        .zone-item {
+            background: rgba(255,255,255,0.03) !important;
+            border: 1px solid rgba(255,255,255,0.05) !important;
+            color: #fff !important;
+            font-weight: 600 !important;
+            font-size: 11px !important;
+        }
+
+        .instruction-item span:last-child {
+            font-size: 12px !important;
+            color: #607898 !important;
+        }
+    </style>
 </head>
+
 
 <body>
     <!-- Top Navigation -->
@@ -82,6 +181,7 @@
                 <div class="view-toggle">
                     <button class="view-btn active" data-view="map">🗺️ Map</button>
                     <button class="view-btn" data-view="charts">📊 Charts</button>
+                    <button class="view-btn" data-view="setup">⚙️ Setup</button>
                 </div>
             </div>
 
@@ -218,9 +318,104 @@
 
 
             </div>
+
+            <!-- Setup View (Zone Builder) -->
+            <div id="view-setup" class="view-container" style="display:none; padding:20px; flex-direction:column; gap:20px; overflow-y:auto;">
+                <div class="charts-title-row">
+                    <span class="title-bar" style="background:var(--yellow);"></span>
+                    Layout Configurator — <span style="color:#e2e8f0;margin-left:8px;font-weight:600;">Custom Zone Mapping</span>
+                </div>
+
+                <div style="display:flex; gap:24px; flex:1; align-items: flex-start;">
+                    <!-- Canvas Drawing Area -->
+                    <div style="flex:1; display:flex; flex-direction:column; gap:12px;">
+                        <div class="canvas-container">
+                            <div style="position:relative; background:#07111E; border-radius:8px; overflow:hidden; border: 1px solid rgba(255,255,255,0.05);">
+                                <canvas id="builder-canvas" width="900" height="520" style="width:100%; display:block; cursor:crosshair;"></canvas>
+                                <div id="builder-hint" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--text-muted);font-size:14px;pointer-events:none;text-align:center; display: flex; flex-direction: column; gap: 15px; align-items: center;">
+                                    <div style="font-size: 40px; opacity: 0.5;">🖼️</div>
+                                    <div>Upload a venue blueprint to start drawing</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 10px;">
+                            <div style="font-size:11px;color:var(--text-muted); display: flex; align-items: center; gap: 6px;">
+                                <span style="color:var(--cyan)">ℹ</span> Click and drag on the map to define rectangular safety zones.
+                            </div>
+                            <button id="btn-clear-zones" class="btn-setup-secondary btn-setup-danger" style="padding: 6px 12px; font-size: 11px;">
+                                🗑️ Clear All
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Controls Panel -->
+                    <div style="width:320px; display:flex; flex-direction:column; gap:16px;">
+                        <!-- Step 1 -->
+                        <div class="setup-step-card">
+                            <div class="setup-step-hdr">
+                                <span class="step-number">1</span>
+                                <span>Upload Blueprint</span>
+                            </div>
+                            <label class="upload-zone">
+                                <span style="font-size: 24px;">📁</span>
+                                <span style="font-size: 13px; font-weight: 600; color: var(--cyan);">Choose Image File</span>
+                                <span style="font-size: 10px; color: var(--text-muted);">PNG, JPG or SVG</span>
+                                <input type="file" id="input-map-upload" accept="image/*" style="display:none;">
+                            </label>
+                        </div>
+
+                        <!-- Step 2 -->
+                        <div class="setup-step-card">
+                            <div class="setup-step-hdr">
+                                <span class="step-number">2</span>
+                                <span>Draw Zones</span>
+                            </div>
+                            <ul class="instruction-list">
+                                <li class="instruction-item">
+                                    <span class="instruction-icon">🖱️</span>
+                                    <span>Click and drag to draw a rectangle on the map.</span>
+                                </li>
+                                <li class="instruction-item">
+                                    <span class="instruction-icon">⌨️</span>
+                                    <span>Name the zone when prompted (e.g. Zone A).</span>
+                                </li>
+                                <li class="instruction-item">
+                                    <span class="instruction-icon">🔄</span>
+                                    <span>Repeat for all required areas.</span>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <!-- Step 3 -->
+                        <div class="setup-step-card">
+                            <div class="setup-step-hdr">
+                                <span class="step-number">3</span>
+                                <span>Finalize Layout</span>
+                            </div>
+                            <div id="zone-list-container" style="margin-bottom: 8px;">
+                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Active Zones</div>
+                                <div id="zone-list" style="min-height: 40px; max-height: 150px; overflow-y: auto; padding-right: 5px;">
+                                    <div style="font-size:11px; color:var(--text-muted); font-style: italic;">No zones defined yet.</div>
+                                </div>
+                            </div>
+                            
+                            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 5px;">
+                                <button id="btn-save-config" class="btn-setup-primary">
+                                    <span>💾</span> SAVE & APPLY CONFIG
+                                </button>
+                                <button id="btn-reset-config" class="btn-setup-secondary">
+                                    <span>↩️</span> Reset to Defaults
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </main>
     </div>
 
+    <script src="/static/js/zone_builder.js"></script>
     <script src="/static/js/script.js"></script>
 </body>
 

@@ -1,6 +1,6 @@
 // ── Configuration ──
 let simulationRunning = true;
-let currentZone = "Zone_A";
+let currentZone = null; // Set dynamically on first data fetch
 let updateInterval = null;
 let currentView = "map";
 let stepCount = 0;
@@ -9,9 +9,9 @@ let lastAIUpdateStep = -1; // Track which simulation step last triggered an AI r
 const AI_STEP_INTERVAL = 10; // Refresh AI every 10 simulation steps
 
 const ZONE_INFO = {
-    "Zone_A": { name: "North Entrance", cap: 200, color: "#22D3EE", id_prefix: "ZA", name_short: "North" },
-    "Zone_B": { name: "Main Concourse", cap: 500, color: "#818CF8", id_prefix: "ZB", name_short: "Main" },
-    "Zone_C": { name: "South Exit", cap: 180, color: "#34D399", id_prefix: "ZC", name_short: "South" }
+    "Zone_A": { name: "Zone A", cap: 200, color: "#22D3EE", id_prefix: "ZA", name_short: "Zone A" },
+    "Zone_B": { name: "Zone B", cap: 500, color: "#818CF8", id_prefix: "ZB", name_short: "Zone B" },
+    "Zone_C": { name: "Zone C", cap: 180, color: "#34D399", id_prefix: "ZC", name_short: "Zone C" }
 };
 
 // Map Blueprint bounds (aligned with backend)
@@ -38,8 +38,12 @@ const _ZONE_BOUNDS = {
     "Zone_C": [0, 220, 700, 200, "#34D399", "ZONE C · SOUTH EXIT"]
 };
 
-// Memory for chart histories
-let zoneHistories = { "Zone_A": { d: [], v: [], r: [], tc: [], l: [] }, "Zone_B": { d: [], v: [], r: [], tc: [], l: [] }, "Zone_C": { d: [], v: [], r: [], tc: [], l: [] } };
+// Memory for chart histories — keyed dynamically. Initialized with defaults.
+let zoneHistories = {
+    "Zone_A": { d: [], v: [], r: [], tc: [], l: [] },
+    "Zone_B": { d: [], v: [], r: [], tc: [], l: [] },
+    "Zone_C": { d: [], v: [], r: [], tc: [], l: [] }
+};
 
 // ── DOM References ──
 const dom = {
@@ -69,7 +73,11 @@ const dom = {
     bannerDesc: document.getElementById("banner-desc"),
     zoneTabs: document.querySelectorAll(".zone-tab"),
     chartsZoneTitle: document.getElementById("charts-zone-title"),
-    views: { map: document.getElementById("view-map"), charts: document.getElementById("view-charts") }
+    views: {
+        map: document.getElementById("view-map"),
+        charts: document.getElementById("view-charts"),
+        setup: document.getElementById("view-setup")
+    }
 };
 
 // ── Chart Configurations ──
@@ -133,7 +141,7 @@ function initMapOverlay() {
     _ROOMS_SCALED.forEach(r => {
         annotations.push({
             x: r[0] + r[2] / 2, y: VH - r[1] - r[3] / 2, text: r[4], showarrow: false,
-            font: { size: 7, color: 'rgba(22, 42, 66, 0.8)', family: 'Inter' }
+            font: { size: 7, color: 'rgba(255, 255, 255, 0.7)', family: 'Inter' }
         });
     });
 
@@ -184,8 +192,35 @@ async function updateData() {
         dom.gsCrit.innerText = data.global_status.crit;
 
         // Process Histories
-        Object.keys(ZONE_INFO).forEach(zKey => {
+        // ── Handle custom zone config from backend ──
+        if (data.is_custom && data.config && Array.isArray(data.config.zones)) {
+            // Remove histories for zones that no longer exist
+            const newZoneKeys = Object.keys(data.zones);
+            // Add histories for new zones
+            newZoneKeys.forEach(k => { if (!zoneHistories[k]) zoneHistories[k] = { d: [], v: [], r: [], tc: [], l: [] }; });
+            // Update ZONE_INFO palette for custom zones
+            const palette = ['#22D3EE','#818CF8','#34D399','#F59E0B','#c084fc','#fb923c'];
+            data.config.zones.forEach((z, i) => {
+                if (!ZONE_INFO[z.name]) {
+                    ZONE_INFO[z.name] = {
+                        name: z.name, name_short: z.name.replace('Zone_',''),
+                        cap: 300, color: palette[i % palette.length],
+                        id_prefix: String.fromCharCode(65 + i)
+                    };
+                }
+            });
+        }
+
+        // Ensure currentZone is valid against what came back from the API
+        const apiZoneKeys = Object.keys(data.zones);
+        if (!currentZone || !data.zones[currentZone]) {
+            currentZone = apiZoneKeys[0] || "Zone_A";
+        }
+
+        // Update all zone histories
+        apiZoneKeys.forEach(zKey => {
             const zd = data.zones[zKey] || {};
+            if (!zoneHistories[zKey]) zoneHistories[zKey] = { d: [], v: [], r: [], tc: [], l: [] };
             const hist = zoneHistories[zKey];
             if (zd.density !== undefined) {
                 hist.d.push(zd.density);
@@ -201,21 +236,45 @@ async function updateData() {
             }
         });
 
-        dom.navSamples.innerText = zoneHistories["Zone_A"].l.length;
+        const firstZoneKey = Object.keys(data.zones)[0];
+        if (firstZoneKey && zoneHistories[firstZoneKey]) {
+            dom.navSamples.innerText = zoneHistories[firstZoneKey].l.length;
+        }
 
-        // Heatmap Image
+        // Heatmap Image (transparent RGBA PNG — overlays on blueprint below)
         dom.heatmapImg.src = data.heatmap_base64;
 
-        // Map Overlays
-        if (data.zones["Zone_A"]) dom.mapZ1.innerText = data.zones["Zone_A"].density.toFixed(1);
-        if (data.zones["Zone_B"]) dom.mapZ2.innerText = data.zones["Zone_B"].density.toFixed(1);
-        if (data.zones["Zone_C"]) dom.mapZ3.innerText = data.zones["Zone_C"].density.toFixed(1);
+        // Blueprint background — show uploaded image behind the heatmap
+        const hmapBody = document.querySelector('.hmap-body');
+        if (hmapBody) {
+            if (data.is_custom && data.config && data.config.map_image) {
+                // Apply a dark tint to the blueprint image to make the heatmap pop
+                hmapBody.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url(${data.config.map_image})`;
+                hmapBody.style.backgroundSize = 'cover';
+                hmapBody.style.backgroundPosition = 'center';
+                hmapBody.style.backgroundRepeat = 'no-repeat';
+            } else {
+                hmapBody.style.backgroundImage = 'none';
+            }
+        }
+
+
+        // Map density labels (use first 3 zone keys)
+        const zKeys = Object.keys(data.zones);
+        if (zKeys[0] && dom.mapZ1) dom.mapZ1.innerText = (data.zones[zKeys[0]].density || 0).toFixed(1);
+        if (zKeys[1] && dom.mapZ2) dom.mapZ2.innerText = (data.zones[zKeys[1]].density || 0).toFixed(1);
+        if (zKeys[2] && dom.mapZ3) dom.mapZ3.innerText = (data.zones[zKeys[2]].density || 0).toFixed(1);
 
         renderZoneCards(data.zones);
 
         if (currentView === "map") {
+            if (data.is_custom && data.config) {
+                drawCustomMapOverlay(data.config);
+            } else {
+                initMapOverlay();
+            }
             updateMapHighlights(data.zones);
-        } else {
+        } else if (currentView === "charts") {
             updateChartsView(data.zones);
         }
 
@@ -226,17 +285,18 @@ async function updateData() {
 
 function renderZoneCards(zonesObj) {
     dom.zoneCardsWrapper.innerHTML = "";
-    Object.keys(ZONE_INFO).forEach(zKey => {
-        const info = ZONE_INFO[zKey];
+    const palette = ['#22D3EE','#818CF8','#34D399','#F59E0B','#c084fc','#fb923c'];
+    Object.keys(zonesObj).forEach((zKey, i) => {
+        // Use ZONE_INFO if available; build fallback for custom zones
+        const info = ZONE_INFO[zKey] || {
+            name: zKey, name_short: zKey.replace('Zone_', ''),
+            color: palette[i % palette.length], id_prefix: String.fromCharCode(65 + i), cap: 300
+        };
         const zData = zonesObj[zKey] || {};
+        const density = zData.density != null ? zData.density.toFixed(1) : "—";
+        const velocity = zData.velocity != null ? zData.velocity.toFixed(2) : "—";
 
-        const density = zData.density ? zData.density.toFixed(1) : "—";
-        const velocity = zData.velocity ? zData.velocity.toFixed(2) : "—";
-
-        let badgeClass = "badge";
-        let badgeText = "NOMINAL";
-        let dColor = info.color;
-
+        let badgeClass = "badge", badgeText = "NOMINAL", dColor = info.color;
         if (zData.risk_level === "red") { badgeClass += " red"; badgeText = "CRITICAL"; dColor = "#EF4444"; }
         else if (zData.risk_level === "yellow") { badgeClass += " yellow"; badgeText = "ELEVATED"; dColor = "#F59E0B"; }
 
@@ -260,13 +320,10 @@ function renderZoneCards(zonesObj) {
                     <span class="zcard-mval" style="color:var(--indigo)">${velocity} <span class="zcard-munit">m/s</span></span>
                 </div>
             </div>
-            ${currentZone === zKey ? `<div class="map-pin"><span class="map-pin-icon">📍</span> Select ${info.name}</div>` : ''}
         `;
-
         card.onclick = () => {
             currentZone = zKey;
-            initMapOverlay(); // Redraw map selection
-            updateData(); // Re-render everything
+            updateData();
         };
         dom.zoneCardsWrapper.appendChild(card);
     });
@@ -297,16 +354,31 @@ function updateMapHighlights(zonesObj) {
 }
 
 function updateChartsView(zonesObj) {
-    const info = ZONE_INFO[currentZone];
+    const palette = ['#22D3EE','#818CF8','#34D399','#F59E0B','#c084fc','#fb923c'];
+    const zKeys = Object.keys(zonesObj);
+    const info = ZONE_INFO[currentZone] || {
+        name: currentZone, color: palette[zKeys.indexOf(currentZone) % palette.length] || '#22D3EE', cap: 300
+    };
     const data = zonesObj[currentZone] || {};
-    const hist = zoneHistories[currentZone];
+    const hist = zoneHistories[currentZone] || { d: [], v: [], r: [], tc: [], l: [] };
 
-    dom.chartsZoneTitle.innerText = info.name;
+    if (dom.chartsZoneTitle) dom.chartsZoneTitle.innerText = info.name;
 
-    // Sync tabs
-    dom.zoneTabs.forEach(t => {
-        t.className = `zone-tab ${t.dataset.zone === currentZone ? "active" : ""}`;
-    });
+    // Rebuild zone tabs dynamically
+    const tabContainer = document.getElementById('zone-tabs');
+    if (tabContainer) {
+        tabContainer.innerHTML = '';
+        zKeys.forEach((zKey, i) => {
+            const tabInfo = ZONE_INFO[zKey] || { name_short: zKey.replace('Zone_',''), color: palette[i % palette.length] };
+            const btn = document.createElement('button');
+            btn.className = `zone-tab ${zKey === currentZone ? 'active' : ''}`;
+            btn.dataset.zone = zKey;
+            btn.style.borderBottomColor = tabInfo.color;
+            btn.innerHTML = `<span style="color:${tabInfo.color};">●</span> ${tabInfo.name_short}`;
+            btn.onclick = () => { currentZone = zKey; updateData(); };
+            tabContainer.appendChild(btn);
+        });
+    }
 
     // Header values
     let dColor = info.color;
@@ -430,12 +502,14 @@ dom.viewBtns.forEach(btn => {
         btn.classList.add('active');
 
         currentView = btn.dataset.view;
-        dom.views.map.style.display = currentView === 'map' ? 'flex' : 'none';
-        dom.views.charts.style.display = currentView === 'charts' ? 'flex' : 'none';
+        Object.entries(dom.views).forEach(([k, el]) => { if (el) el.style.display = (k === currentView) ? 'flex' : 'none'; });
 
-        // Force relayout for Plotly specifically required when unhiding divs
-        window.dispatchEvent(new Event('resize'));
-        updateData();
+        if (currentView === 'setup') {
+            initSetupView();
+        } else {
+            window.dispatchEvent(new Event('resize'));
+            updateData();
+        }
     };
 });
 
@@ -477,6 +551,157 @@ function autoRefreshAI(zones) {
 }
 
 document.getElementById('btn-refresh-ai').onclick = refreshAI;
+
+// ── Custom Map Overlay (for custom zones) ──
+function drawCustomMapOverlay(config) {
+    const VW = 900, VH = 520;
+    const shapes = [];
+    const annotations = [];
+    const palette = ['#22D3EE','#818CF8','#34D399','#F59E0B','#c084fc','#fb923c'];
+
+    config.zones.forEach((z, i) => {
+        const col = palette[i % palette.length];
+        const isSelected = z.name === currentZone;
+        // Note: backend uses y=0 at top; Plotly uses y=0 at bottom; flip y coords
+        const y0 = VH - z.y - z.h;
+        const y1 = VH - z.y;
+        shapes.push({
+            type: 'rect', x0: z.x, y0, x1: z.x + z.w, y1,
+            fillcolor: col + '15',
+            line: { color: col, width: isSelected ? 2 : 1, dash: isSelected ? 'solid' : 'dot' }
+        });
+        annotations.push({
+            x: z.x + 6, y: y1 - 8, text: z.name, showarrow: false,
+            font: { size: 9, color: col, family: 'JetBrains Mono' }, xanchor: 'left'
+        });
+    });
+
+    const layout = {
+        paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+        margin: { l: 0, r: 0, t: 0, b: 0 },
+        xaxis: { range: [0, VW], visible: false, fixedrange: true },
+        yaxis: { range: [0, VH], visible: false, fixedrange: true },
+        shapes, annotations, showlegend: false, hovermode: false, dragmode: false
+    };
+    Plotly.react('map-plotly', [{ x: [], y: [] }], layout, { displayModeBar: false, responsive: true });
+}
+
+// ── Setup View Initialization ──
+let zoneBuilder = null;
+let customMapDataUrl = null;
+
+function initSetupView() {
+    if (!zoneBuilder) {
+        zoneBuilder = new ZoneBuilder('builder-canvas');
+        zoneBuilder.render();
+    }
+
+    // Restore existing blueprint if already saved
+    if (customMapDataUrl) {
+        zoneBuilder.loadImage(customMapDataUrl);
+        document.getElementById('builder-hint').style.display = 'none';
+    }
+
+    // Wire up image upload
+    const upload = document.getElementById('input-map-upload');
+    if (upload && !upload._wired) {
+        upload._wired = true;
+        upload.addEventListener('change', e => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = ev => {
+                customMapDataUrl = ev.target.result;
+                zoneBuilder.loadImage(customMapDataUrl);
+                document.getElementById('builder-hint').style.display = 'none';
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // Wire zone list updater
+    const origRender = zoneBuilder.render.bind(zoneBuilder);
+    zoneBuilder.render = function() { origRender(); updateZoneList(); };
+
+    // Wire clear button
+    const clearBtn = document.getElementById('btn-clear-zones');
+    if (clearBtn && !clearBtn._wired) {
+        clearBtn._wired = true;
+        clearBtn.onclick = () => { if (confirm('Clear all drawn zones?')) { zoneBuilder.clear(); } };
+    }
+
+    // Wire save button
+    const saveBtn = document.getElementById('btn-save-config');
+    if (saveBtn && !saveBtn._wired) {
+        saveBtn._wired = true;
+        saveBtn.onclick = async () => {
+            const scaledZones = zoneBuilder.getScaledZones();
+            if (scaledZones.length === 0) { alert('Draw at least one zone first!'); return; }
+            const payload = { map_image: customMapDataUrl, zones: scaledZones };
+            try {
+                const res = await fetch('/api/config/zones', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const resp = await res.json();
+                if (resp.status === 'success') {
+                    alert(`✅ Saved ${resp.zones_saved} zone(s)! Switching to Map view.`);
+                    // Reset histories for fresh start
+                    Object.keys(zoneHistories).forEach(k => { zoneHistories[k] = { d: [], v: [], r: [], tc: [], l: [] }; });
+                    // Switch to map view
+                    document.querySelector('.view-btn[data-view="map"]').click();
+                } else {
+                    alert('Error: ' + (resp.message || 'Unknown error'));
+                }
+            } catch (err) { alert('Save failed: ' + err.message); }
+        };
+    }
+
+    // Wire reset button
+    const resetBtn = document.getElementById('btn-reset-config');
+    if (resetBtn && !resetBtn._wired) {
+        resetBtn._wired = true;
+        resetBtn.onclick = async () => {
+            if (!confirm('Reset to default Zone A/B/C layout?')) return;
+            await fetch('/api/config/reset', { method: 'POST' });
+            customMapDataUrl = null;
+            zoneBuilder.clear();
+            if (zoneBuilder.image) { zoneBuilder.image = new Image(); zoneBuilder.render(); }
+            document.getElementById('builder-hint').style.display = '';
+            // Clear all custom entries from ZONE_INFO (keep Zone_A/B/C)
+            ['Zone_A','Zone_B','Zone_C'].forEach(k => delete ZONE_INFO[k]); // will rebuild from default
+            Object.assign(ZONE_INFO, {
+                "Zone_A": { name: "Zone A", cap: 200, color: "#22D3EE", id_prefix: "ZA", name_short: "Zone A" },
+                "Zone_B": { name: "Zone B", cap: 500, color: "#818CF8", id_prefix: "ZB", name_short: "Zone B" },
+                "Zone_C": { name: "Zone C", cap: 180, color: "#34D399", id_prefix: "ZC", name_short: "Zone C" }
+            });
+            currentZone = 'Zone_A';
+            Object.values(zoneHistories).forEach(h => { h.d=[]; h.v=[]; h.r=[]; h.tc=[]; h.l=[]; });
+            document.querySelector('.view-btn[data-view="map"]').click();
+        };
+    }
+}
+
+function updateZoneList() {
+    const el = document.getElementById('zone-list');
+    if (!el || !zoneBuilder) return;
+    const zones = zoneBuilder.zones;
+    if (zones.length === 0) {
+        el.innerHTML = '<div style="font-size:11px; color:var(--text-muted); font-style: italic;">No zones defined yet.</div>';
+        return;
+    }
+    el.innerHTML = zones.map((z, i) =>
+        `<div class="zone-item">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="color:var(--cyan); font-weight:bold;">●</span>
+                <span style="font-weight:600; color:#fff;">${z.name}</span>
+            </div>
+            <button onclick="zoneBuilder.removeZone(${i})" style="background:none; border:none; color:var(--red); cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; padding: 4px; border-radius: 4px; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.1)'" onmouseout="this.style.background='none'">
+                🗑️
+            </button>
+        </div>`
+    ).join('');
+}
 
 // Start loop
 initMapOverlay();

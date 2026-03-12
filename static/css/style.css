@@ -203,19 +203,22 @@ body {
     height: 100%; /* Will take up the rest of the flex card */
     min-height: 520px; /* Match new canvas size */
     overflow: hidden;
+    background: #000; /* Dark base for blueprint transparency and heatmap glow */
 }
 #heatmap-img {
     position: absolute;
     top: 0; left: 0;
     width: 900px; height: 520px;
-    z-index: 1; /* Below plotly */
-    opacity: 0.9;
+    z-index: 10; /* Bring to top */
+    opacity: 0.95; /* High opacity for vibrancy */
+    pointer-events: none;
+    mix-blend-mode: screen; /* Glow effect on dark backgrounds */
 }
 #map-plotly {
     position: absolute;
     top: 0; left: 0;
     width: 900px; height: 520px;
-    z-index: 2; /* Above heatmap */
+    z-index: 5; /* Below heatmap but above base background */
 }
 
 .system-status-banner {
@@ -330,4 +333,169 @@ body {
     background: rgba(34,211,238,0.1);
     color: var(--cyan);
     border-color: var(--cyan);
+}
+
+/* ── Setup View (Zone Builder) ── */
+.setup-step-card {
+    background: #07101c;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+
+.setup-step-hdr {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 5px;
+}
+
+.step-number {
+    width: 22px;
+    height: 22px;
+    background: var(--cyan);
+    color: #000;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 900;
+}
+
+.upload-zone {
+    border: 1px dashed var(--border);
+    background: rgba(7, 16, 28, 0.5);
+    border-radius: 8px;
+    padding: 30px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.upload-zone:hover {
+    background: rgba(34, 211, 238, 0.05);
+    border-color: var(--cyan);
+}
+
+.instruction-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.instruction-item {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    font-family: 'Inter', sans-serif;
+}
+
+.instruction-icon {
+    color: var(--cyan);
+    font-size: 14px;
+    min-width: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.zone-item {
+    background: #0b1828;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    margin-bottom: 10px;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.btn-setup-primary {
+    background: var(--green);
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    padding: 14px;
+    font-weight: 800;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-family: 'Inter', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.btn-setup-primary:hover {
+    background: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(34, 197, 94, 0.3);
+}
+
+.btn-setup-secondary {
+    background: #0b1828;
+    border: 1px solid #1e3a5f;
+    color: #fff;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: 'Inter', sans-serif;
+}
+
+.btn-setup-secondary:hover {
+    background: #13253f;
+    border-color: #2d528b;
+    color: #fff;
+}
+
+.btn-setup-danger {
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    background: transparent;
+}
+
+.btn-setup-danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: var(--red);
+    color: var(--red);
+}
+
+.canvas-container {
+    padding: 15px;
+    background: #02060c;
+    border: 1px solid #0f1c2d;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
 }
