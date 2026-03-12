@@ -262,7 +262,7 @@ def get_ai_overview():
 
 **Troubleshooting Steps:**
 1. **IAM Role:** Does your App Runner Instance Role have `bedrock:InvokeModel`?
-2. **Model Access:** Go to AWS Console -> Bedrock -> Model Access. Ensure 'Claude 3 Haiku' is **Access granted**.
+2. **Model Access:** Go to AWS Console -> Bedrock -> Model Catalog. Ensure 'Amazon Titan Text Express' is available.
 3. **Region:** Ensure you are using `us-east-1` (N. Virginia)."""
         
     return {"overview": overview}
