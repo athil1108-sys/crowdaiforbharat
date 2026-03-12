@@ -106,8 +106,8 @@
         <main class="main-content">
             <!-- Map View -->
             <div id="view-map" class="view-container active" style="flex-direction: row; gap: 20px;">
-                <!-- Left Column -->
-                <div style="flex: 0 0 900px; display: flex; flex-direction: column;">
+                <!-- Main Column (Map + AI Stat Banner) -->
+                <div style="flex: 1; display: flex; flex-direction: column;">
                     <div class="hmap-card" style="margin-bottom: 0;">
                         <div class="hmap-hdr">
                             <div style="display:flex;align-items:center;gap:10px;font-size:12px;font-weight:700;">
@@ -128,27 +128,19 @@
                         </div>
                     </div>
 
-                    <div class="system-status-banner" id="system-banner" style="margin-top: 15px;">
-                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-                            <div class="checkbox-mock checked">✓</div>
-                            <b id="banner-title" style="color:#22C55E;font-size:12px;letter-spacing:0.5px;">SYSTEM NORMAL</b>
+                    <div class="system-status-banner" id="system-banner" style="margin-top: 15px; display: flex; flex-direction: column; gap: 10px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between;">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <div class="checkbox-mock checked">✓</div>
+                                <b id="banner-title" style="color:#22C55E;font-size:12px;letter-spacing:0.5px;">SYSTEM NORMAL</b>
+                            </div>
+                            <button id="btn-refresh-ai" class="btn-icon-small" title="Force AI Refresh">🤖 Bedrock Synthesis</button>
                         </div>
-                        <div id="banner-desc" style="color:#8a9fb8;font-size:13px;margin-left:22px;">All zones operating within normal parameters.</div>
-                    </div>
-                </div>
-
-                <!-- Right Column (AI Overview) -->
-                <div class="ai-panel">
-                    <div class="ai-panel-hdr">
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <span>🤖</span> Bedrock AI Synthesis
-                        </div>
-                        <button id="btn-refresh-ai" class="btn-icon-small" title="Generate New Overview">↻ Run</button>
-                    </div>
-                    <div class="ai-panel-body" id="ai-overview-text">
-                        <div style="text-align: center; color: #607898; margin-top: 60px;">
-                            <div style="font-size: 32px; margin-bottom: 16px;">🧠</div>
-                            Click <b>Run</b> to synthesize a real-time situation report using <b>Amazon Nova Lite</b>.
+                        <div id="banner-desc" style="color:#8a9fb8;font-size:14px; font-weight: 500; border-bottom: 1px solid #1a3050; padding-bottom: 10px;">All zones operating within normal parameters.</div>
+                        
+                        <!-- Integrated AI Reporting Section -->
+                        <div id="ai-overview-text" style="font-size: 13px; line-height: 1.6; color: #c8d8f0; min-height: 20px;">
+                            <span style="color: #607898; font-style: italic;">AI analysis will appear here every 10 steps...</span>
                         </div>
                     </div>
                 </div>
