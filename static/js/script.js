@@ -5,9 +5,8 @@ let updateInterval = null;
 let currentView = "map";
 let stepCount = 0;
 let totalSteps = 0;
-let lastRiskState = ""; // Track string of risk levels: e.g. "green-green-yellow"
-let lastAIUpdateTime = 0;
-const AI_COOLDOWN = 30000; // 30 seconds minimum between auto-updates
+let lastAIUpdateStep = -1; // Track which simulation step last triggered an AI refresh
+const AI_STEP_INTERVAL = 10; // Refresh AI every 10 simulation steps
 
 const ZONE_INFO = {
     "Zone_A": { name: "North Entrance", cap: 200, color: "#22D3EE", id_prefix: "ZA", name_short: "North" },
@@ -460,22 +459,19 @@ async function refreshAI() {
         // Simple bolding for "Zone_A:", etc.
         formatted = formatted.replace(/Zone_[A-C]/g, match => `<strong style="color:var(--cyan)">${match}</strong>`);
         aiText.innerHTML = `<div style="animation: fadeIn 0.5s;">${formatted}</div>`;
-        lastAIUpdateTime = Date.now();
+        lastAIUpdateStep = stepCount;
     } catch (e) {
         aiText.innerHTML = '<div style="color:#EF4444; padding: 20px;">⚠️ <b>Connection Error</b><br><br>Failed to reach AI endpoint. Ensure the backend is running and AWS credentials are valid.</div>';
     }
 }
 
 function autoRefreshAI(zones) {
-    // 1. Generate a "snapshot" of the current risk state
-    const currentRisk = Object.keys(ZONE_INFO).map(z => zones[z]?.risk_level || "green").join("-");
-
-    // 2. Detect change (e.g., any zone moved from green to yellow, or yellow to red)
-    const hasChanged = currentRisk !== lastRiskState;
-    const isCooldownOver = (Date.now() - lastAIUpdateTime) > AI_COOLDOWN;
-
-    if (hasChanged && isCooldownOver) {
-        lastRiskState = currentRisk;
+    // Trigger AI refresh every 10 steps (e.g., step 10, 20, 30...)
+    // Also trigger on first step if it hasn't run yet
+    const shouldRefresh = (stepCount > 0 && (stepCount % AI_STEP_INTERVAL === 0)) || (lastAIUpdateStep === -1 && stepCount > 0);
+    
+    // Ensure we only trigger once per target step
+    if (shouldRefresh && stepCount !== lastAIUpdateStep) {
         refreshAI();
     }
 }
