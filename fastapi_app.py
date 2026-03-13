@@ -390,6 +390,11 @@ def serve_frontend():
     """Serve the main HTML file."""
     return FileResponse("static/index.html")
 
+@app.get("/mobile")
+def serve_mobile():
+    """Serve the mobile guard app."""
+    return FileResponse("static/mobile.html")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Guard — CrowdAI</title>
+    <link rel="stylesheet" href="/static/css/mobile.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="desktop-wrapper">
+        <div class="mobile-frame">
+            <div class="notch"></div>
+            <div class="screen">
+                
+                <!-- LOGIN VIEW -->
+                <section id="login-view" class="view active">
+                    <div class="login-header">
+                        <div class="logo-box">
+                            <i class="fa-solid fa-shield-halved"></i>
+                        </div>
+                        <h2>Mobile Guard</h2>
+                    </div>
+
+                    <div class="lock-indicator">
+                        <div class="lock-circle">
+                            <i class="fa-solid fa-lock"></i>
+                        </div>
+                    </div>
+
+                    <div class="auth-content">
+                        <h1>Secure Access</h1>
+                        <p>Enter your credentials to access the security terminal</p>
+                        
+                        <div class="input-group">
+                            <label>USER ID</label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-id-card"></i>
+                                <input type="text" placeholder="8-digit Employee ID" id="user-id">
+                            </div>
+                        </div>
+
+                        <div class="input-group">
+                            <div class="label-row">
+                                <label>PASSWORD</label>
+                                <span class="forgot">Forgot?</span>
+                            </div>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-key"></i>
+                                <input type="password" placeholder="••••••••" id="password">
+                                <i class="fa-solid fa-eye-slash toggle-eye"></i>
+                            </div>
+                        </div>
+
+                        <button id="btn-authenticate" class="btn-primary">
+                            <i class="fa-solid fa-shield-check"></i>
+                            AUTHENTICATE
+                        </button>
+                    </div>
+                </section>
+
+                    <!-- DASHBOARD VIEW -->
+                    <section id="hub-view" class="view active">
+                        <header class="app-header">
+                            <div class="header-left">
+                                <div class="bell-box" id="btn-notifications">
+                                    <i class="fa-solid fa-bell"></i>
+                                    <div class="badge"></div>
+                                </div>
+                                <div class="header-info">
+                                    <h3>Dashboard</h3>
+                                    <p>Guard G-42 • Sector Delta-9</p>
+                                </div>
+                            </div>
+                            <div class="header-right">
+                                <span class="status-pill"><span class="dot"></span> LIVE</span>
+                            </div>
+                        </header>
+    
+                        <div class="scroll-content">
+                            <!-- Critical Alert Card -->
+                            <div class="critical-alert-card">
+                                <div class="alert-label">
+                                    <i class="fa-solid fa-brain"></i>
+                                    AI SITUATION OVERVIEW
+                                </div>
+                                <h2 id="ai-command-title" style="font-size: 18px; line-height: 1.4; margin-bottom: 12px;">Analyzing live telemetry...</h2>
+                                <p id="ai-command-desc" style="font-size: 14px; opacity: 0.9; line-height: 1.5; height: auto; max-height: none;">Connecting to Bedrock AI for strategic insights...</p>
+                                <button class="btn-acknowledge">
+                                    ACKNOWLEDGE COMMAND <i class="fa-solid fa-circle-check"></i>
+                                </button>
+                            </div>
+    
+
+                            <div class="section-title-row">
+                                <h4>ZONE MANAGEMENT</h4>
+                                <span class="active-count">0 Active Zones</span>
+                            </div>
+    
+                            <div id="zone-list" class="zone-list">
+                                <!-- Dynamic Zone Cards -->
+                            </div>
+                        </div>
+                    </section>
+
+                <!-- ZONE DETAIL VIEW -->
+                <section id="detail-view" class="view">
+                    <div class="detail-header">
+                        <button class="btn-back"><i class="fa-solid fa-arrow-left"></i></button>
+                        <div class="detail-title">
+                            <h3 id="detail-zone-name">Zone Alpha</h3>
+                            <p>Real-time telemetry</p>
+                        </div>
+                    </div>
+
+                <div class="scroll-content">
+                    <!-- Zone Details -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <label><i class="fa-solid fa-users"></i> Current Density</label>
+                            <div class="stat-value" id="detail-density">85%</div>
+                            <div class="stat-trend pos">
+                                <i class="fa-solid fa-arrow-trend-up"></i> +12% from last hour
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <label><i class="fa-solid fa-gauge-high"></i> Flow Rate</label>
+                            <div class="stat-value" id="detail-flow">120 <small>ppm</small></div>
+                            <div class="stat-trend neg">
+                                <i class="fa-solid fa-arrow-trend-down"></i> -5% throughput
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-title-row">
+                        <h4><i class="fa-solid fa-bell"></i> Zone Notifications</h4>
+                    </div>
+
+                    <div id="zone-notification-list" class="notification-list">
+                        <!-- Populated by JS -->
+                    </div>
+
+                    <button class="btn-secondary btn-full btn-back-to-hub">
+                        <i class="fa-solid fa-share-nodes"></i>
+                        Return to Alert Hub
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <!-- Notifications Modal -->
+        <div id="notifications-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h4><i class="fa-solid fa-bell"></i> System Notifications</h4>
+                    <button class="btn-close-modal"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div id="modal-notification-list" class="modal-body">
+                    <!-- Active deployment alerts appear here -->
+                </div>
+            </div>
+        </div>
+        </div>
+
+                <!-- PROFILE VIEW -->
+                <section id="profile-view" class="view">
+                    <div class="detail-header">
+                        <button class="btn-back-to-hub"><i class="fa-solid fa-arrow-left"></i></button>
+                        <div class="detail-title">
+                            <h3>Guard Profile</h3>
+                        </div>
+                    </div>
+
+                    <div class="scroll-content">
+                        <div class="profile-main">
+                            <div class="profile-avatar-large">
+                                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Mark" alt="Avatar">
+                                <div class="verified-badge"><i class="fa-solid fa-circle-check"></i></div>
+                            </div>
+                            <h2 class="profile-name">Guard G-42 (Mark Brock)</h2>
+                            <p class="profile-sector">Sector Delta-9</p>
+                        </div>
+
+                        <div class="status-summary-grid">
+                            <div class="status-mini-card">
+                                <label>SHIFT</label>
+                                <strong>08:00h</strong>
+                            </div>
+                            <div class="status-mini-card">
+                                <label>STATUS</label>
+                                <strong class="text-active"><span class="dot"></span> Active</strong>
+                            </div>
+                            <div class="status-mini-card">
+                                <label>RANK</label>
+                                <strong>Lvl 4</strong>
+                            </div>
+                        </div>
+
+                        <div class="preferences-box">
+                            <h4 class="pref-title">PREFERENCES</h4>
+                            
+                            <div class="pref-item">
+                                <div class="pref-icon"><i class="fa-solid fa-bell"></i></div>
+                                <div class="pref-label">Push notifications</div>
+                                <label class="switch">
+                                    <input type="checkbox" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+
+                            <div class="pref-item">
+                                <div class="pref-icon"><i class="fa-solid fa-face-smile"></i></div>
+                                <div class="pref-label">Face ID</div>
+                                <label class="switch">
+                                    <input type="checkbox">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+
+                            <div class="pref-item">
+                                <div class="pref-icon"><i class="fa-solid fa-lock"></i></div>
+                                <div class="pref-label">PIN Code</div>
+                                <i class="fa-solid fa-chevron-right chevron-dim"></i>
+                            </div>
+                        </div>
+
+                        <button class="btn-logout">
+                            <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
+                        </button>
+                    </div>
+                </section>
+
+                <!-- GLOBAL NAV -->
+                <nav id="main-nav" class="bottom-nav">
+                    <div class="nav-item active" data-tab="alerts">
+                        <i class="fa-solid fa-bell"></i>
+                        <span>Alerts</span>
+                    </div>
+                    <div class="nav-item" data-tab="profile">
+                        <i class="fa-solid fa-user"></i>
+                        <span>Profile</span>
+                    </div>
+                </nav>
+            </div>
+            <div class="home-indicator"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/mobile.js"></script>
+</body>
+</html>

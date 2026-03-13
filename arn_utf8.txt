@@ -1,0 +1,1 @@
+﻿arn:aws:apprunner:us-east-1:283476597189:service/crowdai-frontend/e6e3bee9f5214ed780ac0b4bcc5cd47f
